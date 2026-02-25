@@ -55,8 +55,8 @@ An AI-powered mock interview platform that conducts adaptive voice interviews, a
 
 ```powershell
 # 1. Clone the repo
-git clone https://github.com/trigyy/slingshot.git
-cd slingshot
+git clone git@github.com:Bamvoov/amd-slingshot.git
+cd amd-slingshot
 
 # 2. Run the setup script (creates venv, installs deps, downloads models)
 .\setup.ps1
