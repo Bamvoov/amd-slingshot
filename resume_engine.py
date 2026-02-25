@@ -381,15 +381,21 @@ class ResumeIntelligenceEngine:
         self.parser = ResumeParser()
         self.matcher = SemanticMatcher()
 
-    def process(self, file_path: str | Path, job_role: str = "Software Engineer") -> ResumeProfile:
+    def process(self, file_path: str | Path, job_role: str = "Software Engineer", progress_callback=None) -> ResumeProfile:
         logger.info(f"Processing resume: {file_path} for role: {job_role}")
 
         # Step 1: Extract raw text
+        if progress_callback:
+            progress_callback(10, "Extracting raw text from document...")
+            
         raw_text = self.extractor.extract(file_path)
         if len(raw_text.strip()) < 50:
             raise ValueError("Resume appears to be empty or unreadable. Try a different file.")
 
         # Step 2: Parse structured info
+        if progress_callback:
+            progress_callback(30, "Parsing resume structure and experience...")
+            
         name = self.parser.extract_name(raw_text)
         contact = self.parser.extract_contact(raw_text)
         education = self.parser.extract_education(raw_text)
@@ -398,11 +404,17 @@ class ResumeIntelligenceEngine:
         years_exp = self.parser.estimate_years_experience(raw_text)
 
         # Step 3: Semantic skill matching
+        if progress_callback:
+            progress_callback(60, f"Evaluating skills against {job_role} requirements...")
+            
         logger.info("Running semantic skill matching (sentence-transformers)...")
         skill_matches = self.matcher.match_skills(raw_text, job_role)
         readiness = self.matcher.compute_readiness(skill_matches)
 
         # Step 4: Detect red flags
+        if progress_callback:
+            progress_callback(85, "Analyzing profile and detecting red flags...")
+            
         red_flags = []
         if years_exp == 0:
             red_flags.append("No work experience detected")
@@ -412,6 +424,9 @@ class ResumeIntelligenceEngine:
             red_flags.append(f"Low role match ({readiness}%) — significant skill gaps")
 
         # Step 5: Build profile
+        if progress_callback:
+            progress_callback(95, "Finalizing candidate profile...")
+            
         profile = ResumeProfile(
             raw_text=raw_text,
             candidate_name=name,
@@ -431,6 +446,11 @@ class ResumeIntelligenceEngine:
         profile.summary_for_llm = build_llm_summary(profile)
 
         logger.info(f"Resume processed. Readiness: {readiness}% | Skills: {len(detected_skills)}")
+        
+        # Step 7: Complete
+        if progress_callback:
+            progress_callback(100, "Analysis complete!")
+            
         return profile
 
 

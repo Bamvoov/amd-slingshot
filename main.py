@@ -1,8 +1,6 @@
 """
 AI Interviewer — Entry Point
 ==============================
-Loads environment variables, validates API keys,
-and launches the PyQt6 application.
 """
 
 import sys

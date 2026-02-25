@@ -14,12 +14,14 @@ Fonts: JetBrains Mono (monospace), Outfit (sans)
 
 from __future__ import annotations
 
+
 import os
 import sys
 import time
 import logging
 from pathlib import Path
 from typing import Optional
+from PyQt6.QtWidgets import QMainWindow
 
 import numpy as np
 from PyQt6.QtCore import (
@@ -43,20 +45,20 @@ logger = logging.getLogger(__name__)
 # ─── Color Palette ────────────────────────────────────────────────────────────
 
 COLORS = {
-    "bg_dark": "#040812",
-    "bg_panel": "#0c1220",
-    "bg_glass": "rgba(255, 255, 255, 12)",
-    "border": "rgba(0, 212, 255, 20)",
-    "border_active": "#00d4ff",
-    "cyan": "#00d4ff",
-    "cyan_dim": "#0099bb",
-    "amber": "#f59e0b",
-    "green": "#10b981",
-    "red": "#ef4444",
-    "purple": "#8b5cf6",
-    "text_primary": "#e2e8f0",
-    "text_secondary": "#64748b",
-    "text_accent": "#00d4ff",
+    "bg_dark": "#f8f9fa",         # Google Light Grey Background
+    "bg_panel": "#ffffff",        # Pure White Surface Cards
+    "bg_glass": "#ffffff",        # Now solid white (legacy naming)
+    "border": "#dadce0",          # Light Material Border
+    "border_active": "#1a73e8",   # Google Blue Active
+    "cyan": "#1a73e8",            # Alias for primary Google Blue
+    "cyan_dim": "#4285f4",        # Google Blue Lighter
+    "amber": "#f29900",           # Google Yellow/Amber
+    "green": "#1e8e3e",           # Google Green
+    "red": "#d93025",             # Google Red
+    "purple": "#9333ea",          # A generic deep purple
+    "text_primary": "#202124",    # Google High-Contrast Text
+    "text_secondary": "#5f6368",  # Google Muted Text
+    "text_accent": "#1a73e8",     # Google Blue Accent
 }
 
 STYLESHEET = """
@@ -248,7 +250,7 @@ class WaveformWidget(QWidget):
             self._draw_audio_wave(painter, w, h, mid)
 
     def _draw_idle_wave(self, painter, w, h, mid):
-        pen = QPen(QColor(0, 212, 255, 40))
+        pen = QPen(QColor(26, 115, 232, 40))  # Google Blue fading
         pen.setWidth(1)
         painter.setPen(pen)
         step = w / 60
@@ -261,7 +263,7 @@ class WaveformWidget(QWidget):
         n = len(self._samples)
         step = w / n
 
-        # Glow effect — draw 3 layers
+        # Glow effect — draw 3 layers (Google Blue shadow)
         for glow_alpha, glow_width, glow_mult in [(15, 6, 1.2), (40, 3, 1.0), (200, 1, 0.9)]:
             pen = QPen(QColor(0, 212, 255, glow_alpha))
             pen.setWidth(glow_width)
@@ -372,7 +374,7 @@ class LandingScreen(QWidget):
 
         # ── Header ──────────────────────────────────────────────────────
         header = QHBoxLayout()
-        logo_label = QLabel("◈ AI INTERVIEWER")
+        logo_label = QLabel("Google Interviewer AI")
         logo_label.setStyleSheet(
             "font-family: 'JetBrains Mono', monospace; font-size: 16px;"
             "color: #00d4ff; font-weight: 700; letter-spacing: 3px;"
@@ -780,7 +782,7 @@ class ReportScreen(QWidget):
 
         # Header
         header = QHBoxLayout()
-        title = QLabel("◈ INTERVIEW REPORT")
+        title = QLabel("Google Interviewer AI Report")
         title.setStyleSheet(
             "font-family: 'JetBrains Mono', monospace; font-size: 18px; "
             "color: #00d4ff; font-weight: 700; letter-spacing: 3px;"
@@ -803,7 +805,8 @@ class ReportScreen(QWidget):
         self.report_layout.setSpacing(16)
         outer.addWidget(scroll)
 
-    def populate_report(self, behavior_report, session_data: dict, skill_matches: list):
+    def populate_report(self, behavior_report, session_data: dict, skill_matches: list,
+                        ai_feedback: str = ""):
         """Render the full report with charts and metrics."""
         layout = self.report_layout
 
@@ -814,7 +817,7 @@ class ReportScreen(QWidget):
                 child.widget().deleteLater()
 
         # ── Score Summary Row ─────────────────────────────────────────
-        scores_card = GlassCard()
+        scores_card = MaterialCard()
         scores_layout = QHBoxLayout(scores_card)
         scores_layout.setContentsMargins(24, 20, 24, 20)
 
@@ -853,6 +856,10 @@ class ReportScreen(QWidget):
             scores_layout.addWidget(badge_widget)
 
         layout.addWidget(scores_card)
+
+        # ── AI Feedback (What to Improve + Topics to Revise) ──────────
+        if ai_feedback:
+            self._add_ai_feedback(layout, ai_feedback)
 
         # ── Skill Readiness Chart ─────────────────────────────────────
         if skill_matches:
@@ -901,7 +908,7 @@ class ReportScreen(QWidget):
 
             plt.tight_layout()
 
-            card = GlassCard()
+            card = MaterialCard()
             card_layout = QVBoxLayout(card)
             canvas = FigureCanvasQTAgg(fig)
             card_layout.addWidget(canvas)
@@ -911,7 +918,7 @@ class ReportScreen(QWidget):
         except Exception as e:
             logger.warning(f"Skill chart render error: {e}")
             # Fallback text display
-            card = GlassCard()
+            card = MaterialCard()
             cl = QVBoxLayout(card)
             lbl = QLabel("SKILL ANALYSIS")
             lbl.setStyleSheet("font-size: 11px; color: #1e3a5f; letter-spacing: 3px; font-family: monospace;")
@@ -969,7 +976,7 @@ class ReportScreen(QWidget):
 
             plt.tight_layout()
 
-            card = GlassCard()
+            card = MaterialCard()
             card_layout = QVBoxLayout(card)
             canvas = FigureCanvasQTAgg(fig)
             card_layout.addWidget(canvas)
@@ -979,8 +986,75 @@ class ReportScreen(QWidget):
         except Exception as e:
             logger.warning(f"Confidence chart error: {e}")
 
+    def _add_ai_feedback(self, layout, ai_feedback: str):
+        """Add AI-generated improvement feedback and topics to revise."""
+        card = MaterialCard()
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(28, 24, 28, 24)
+        cl.setSpacing(14)
+
+        header = QLabel("🤖  AI INTERVIEW FEEDBACK")
+        header.setFont(QFont("Roboto", 13, QFont.Weight.Bold))
+        header.setStyleSheet(f"color: {COLORS['cyan']}; letter-spacing: 1px;")
+        cl.addWidget(header)
+
+        # Separator line
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"background: {COLORS['border']}; max-height: 1px;")
+        cl.addWidget(sep)
+
+        # Parse and display feedback lines with icons
+        for line in ai_feedback.strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+
+            # Section headers
+            if line.upper().startswith("WHAT") or line.upper().startswith("AREAS") or "IMPROVE" in line.upper():
+                lbl = QLabel(f"🔧  {line}")
+                lbl.setFont(QFont("Roboto", 12, QFont.Weight.Bold))
+                lbl.setStyleSheet(f"color: {COLORS['text_primary']}; margin-top: 8px;")
+                lbl.setWordWrap(True)
+                cl.addWidget(lbl)
+            elif line.upper().startswith("TOPIC") or "REVISE" in line.upper() or "STUDY" in line.upper():
+                lbl = QLabel(f"📚  {line}")
+                lbl.setFont(QFont("Roboto", 12, QFont.Weight.Bold))
+                lbl.setStyleSheet(f"color: {COLORS['text_primary']}; margin-top: 8px;")
+                lbl.setWordWrap(True)
+                cl.addWidget(lbl)
+            elif line.upper().startswith("WHAT YOU DID") or "WELL" in line.upper() or "STRENGTH" in line.upper():
+                lbl = QLabel(f"✅  {line}")
+                lbl.setFont(QFont("Roboto", 12, QFont.Weight.Bold))
+                lbl.setStyleSheet(f"color: {COLORS['green']}; margin-top: 8px;")
+                lbl.setWordWrap(True)
+                cl.addWidget(lbl)
+            elif line.startswith(("-", "•", "*", "·")):
+                # Bullet points
+                clean = line.lstrip("-•*· ")
+                lbl = QLabel(f"    ▸  {clean}")
+                lbl.setFont(QFont("Roboto", 11))
+                lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; padding: 2px 0;")
+                lbl.setWordWrap(True)
+                cl.addWidget(lbl)
+            elif line[0].isdigit() and "." in line[:4]:
+                # Numbered items
+                lbl = QLabel(f"    {line}")
+                lbl.setFont(QFont("Roboto", 11))
+                lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; padding: 2px 0;")
+                lbl.setWordWrap(True)
+                cl.addWidget(lbl)
+            else:
+                lbl = QLabel(line)
+                lbl.setFont(QFont("Roboto", 11))
+                lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; padding: 1px 0;")
+                lbl.setWordWrap(True)
+                cl.addWidget(lbl)
+
+        layout.addWidget(card)
+
     def _add_recommendations(self, layout, recommendations: list[str]):
-        card = GlassCard()
+        card = MaterialCard()
         cl = QVBoxLayout(card)
         cl.setContentsMargins(24, 20, 24, 20)
         cl.setSpacing(12)
@@ -999,6 +1073,65 @@ class ReportScreen(QWidget):
 
         layout.addWidget(card)
         layout.addStretch()
+
+class FeedbackWorker(QThread):
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
+
+    def __init__(self, session_data: dict, parent=None):
+        super().__init__(parent)
+        self.session_data = session_data
+
+    def run(self):
+        try:
+            import httpx
+            import os
+            
+            conversation = self.session_data.get("conversation_history", [])
+            if not conversation:
+                self.finished.emit("")
+                return
+
+            conv_text = "".join(
+                f"{'Interviewer' if msg['role'] == 'assistant' else 'Candidate'}: {msg['content']}\n"
+                for msg in conversation
+            )
+
+            job_role = self.session_data.get("job_role", "Software Engineer")
+            prompt = f"""You are an expert interview coach. Analyze the following {job_role} interview transcript and provide structured feedback.
+
+Please respond in EXACTLY this format (use these exact headers):
+
+What You Did Well:
+- [list 2-3 specific strengths]
+
+Areas for Improvement:
+- [list 3-4 specific things to improve]
+
+Topics to Revise:
+- [list 4-6 specific technical topics to study]
+
+Transcript:
+{conv_text[:4000]}
+"""
+            api_key = os.environ.get("GROQ_API_KEY", "")
+            response = httpx.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 800,
+                    "temperature": 0.4,
+                },
+                timeout=15.0,
+            )
+            response.raise_for_status()
+            data = response.json()
+            self.finished.emit(data["choices"][0]["message"]["content"])
+        except Exception as e:
+            logger.warning(f"AI feedback generation failed: {e}")
+            self.error.emit(str(e))
 
 
 # ─── Main Application Window ──────────────────────────────────────────────────
@@ -1074,22 +1207,84 @@ class MainWindow(QMainWindow):
         Called when user clicks BEGIN INTERVIEW.
         Runs resume processing + spins up the session worker.
         """
-        from PyQt6.QtWidgets import QProgressDialog
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar
         import threading
 
-        # Show progress dialog during resume processing
-        progress = QProgressDialog("Analyzing resume...", None, 0, 0, self)
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.setWindowTitle("Processing")
-        progress.setMinimumDuration(0)
-        progress.show()
+        # ── Styled Progress Dialog ────────────────────────────────
+        progress_dialog = QDialog(self)
+        progress_dialog.setWindowTitle("Analyzing Resume")
+        progress_dialog.setFixedSize(460, 200)
+        progress_dialog.setModal(True)
+        progress_dialog.setStyleSheet(f"""
+            QDialog {{
+                background: {COLORS['bg_panel']};
+                border: 1px solid {COLORS['border']};
+                border-radius: 16px;
+            }}
+        """)
+
+        layout = QVBoxLayout(progress_dialog)
+        layout.setContentsMargins(32, 28, 32, 28)
+        layout.setSpacing(16)
+
+        # Title
+        title_label = QLabel("📄  Analyzing Resume...")
+        title_label.setFont(QFont("Roboto", 16, QFont.Weight.Bold))
+        title_label.setStyleSheet(f"color: {COLORS['text_primary']};")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title_label)
+
+        # Percentage label
+        pct_label = QLabel("0%")
+        pct_label.setFont(QFont("Roboto", 28, QFont.Weight.Bold))
+        pct_label.setStyleSheet(f"color: {COLORS['cyan']};")
+        pct_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(pct_label)
+
+        # Progress bar
+        progress_bar = QProgressBar()
+        progress_bar.setRange(0, 100)
+        progress_bar.setValue(0)
+        progress_bar.setTextVisible(False)
+        progress_bar.setFixedHeight(8)
+        progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                background: {COLORS['bg_dark']};
+                border: none;
+                border-radius: 4px;
+            }}
+            QProgressBar::chunk {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {COLORS['cyan']}, stop:1 {COLORS['cyan_dim']});
+                border-radius: 4px;
+            }}
+        """)
+        layout.addWidget(progress_bar)
+
+        # Step description label
+        step_label = QLabel("Preparing...")
+        step_label.setFont(QFont("Roboto", 11))
+        step_label.setStyleSheet(f"color: {COLORS['text_secondary']};")
+        step_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(step_label)
+
+        progress_dialog.show()
         QApplication.processEvents()
+
+        # Thread-safe progress state
+        progress_state = [0, "Preparing..."]  # [percent, message]
+
+        def _progress_callback(pct, msg):
+            progress_state[0] = pct
+            progress_state[1] = msg
 
         def _process():
             try:
                 from core.resume_engine import ResumeIntelligenceEngine
                 engine = ResumeIntelligenceEngine()
-                self._resume_profile = engine.process(file_path, job_role)
+                self._resume_profile = engine.process(
+                    file_path, job_role, progress_callback=_progress_callback
+                )
                 return True
             except Exception as e:
                 return str(e)
@@ -1102,11 +1297,26 @@ class MainWindow(QMainWindow):
         t = threading.Thread(target=_worker, daemon=True)
         t.start()
 
+        last_pct = -1
         while t.is_alive():
             QApplication.processEvents()
-            time.sleep(0.05)
+            # Update UI from progress state
+            if progress_state[0] != last_pct:
+                last_pct = progress_state[0]
+                progress_bar.setValue(last_pct)
+                pct_label.setText(f"{last_pct}%")
+                step_label.setText(progress_state[1])
+                QApplication.processEvents()
+            time.sleep(0.03)
 
-        progress.close()
+        # Ensure 100% is shown briefly
+        progress_bar.setValue(100)
+        pct_label.setText("100%")
+        step_label.setText("Resume analysis complete!")
+        QApplication.processEvents()
+        time.sleep(0.3)
+
+        progress_dialog.close()
 
         if result_holder[0] is not True:
             from PyQt6.QtWidgets import QMessageBox
@@ -1227,12 +1437,66 @@ class MainWindow(QMainWindow):
     def _on_behavioral_report(self, report):
         self._last_behavior_report = report
 
+    def _generate_ai_feedback(self, session_data: dict) -> str:
+        """Use Groq LLM to generate personalized interview feedback."""
+        try:
+            import httpx
+            conversation = session_data.get("conversation_history", [])
+            if not conversation:
+                return ""
+
+            conv_text = ""
+            for msg in conversation:
+                role = "Interviewer" if msg["role"] == "assistant" else "Candidate"
+                conv_text += f"{role}: {msg['content']}\n"
+
+            job_role = session_data.get("job_role", "Software Engineer")
+
+            prompt = f"""You are an expert interview coach. Analyze the following {job_role} interview transcript and provide structured feedback.
+
+Please respond in EXACTLY this format (use these exact headers):
+
+What You Did Well:
+- [list 2-3 specific strengths from the interview]
+
+Areas for Improvement:
+- [list 3-4 specific things the candidate should improve]
+
+Topics to Revise:
+- [list 4-6 specific technical topics the candidate should study based on weak answers]
+
+Here is the interview transcript:
+{conv_text[:4000]}
+"""
+            # Synchronous call since we're already in the main thread
+            import os
+            api_key = os.environ.get("GROQ_API_KEY", "")
+            response = httpx.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 800,
+                    "temperature": 0.4,
+                },
+                timeout=15.0,
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+        except Exception as e:
+            logger.warning(f"AI feedback generation failed: {e}")
+            return ""
+
     def _on_session_complete(self, session_data: dict):
         self._last_session_data = session_data
+        
+        # Stop analyzers and audio
         if self._behavioral_analyzer:
-            behavior_report = self._behavioral_analyzer.stop()
+            self._last_behavior_report = self._behavioral_analyzer.stop()
         else:
-            behavior_report = None
+            self._last_behavior_report = None
 
         if self._audio_manager:
             self._audio_manager.shutdown()
@@ -1245,12 +1509,21 @@ class MainWindow(QMainWindow):
         if self._current_ai_response:
             self.interview.append_transcript("AI", self._current_ai_response)
 
-        # Build report
-        if behavior_report and self._resume_profile:
+        # Start background thread for LLM feedback
+        self.interview.end_btn.setText("ANALYZING TRANSCRIPT...")
+        self._feedback_worker = FeedbackWorker(session_data)
+        self._feedback_worker.finished.connect(self._finalize_report)
+        self._feedback_worker.error.connect(lambda e: self._finalize_report("")) # Fallback on error
+        self._feedback_worker.start()
+
+    def _finalize_report(self, ai_feedback: str):
+        """Called when the FeedbackWorker finishes."""
+        if self._last_behavior_report and self._resume_profile:
             self.report.populate_report(
-                behavior_report,
-                session_data,
+                self._last_behavior_report,
+                self._last_session_data,
                 self._resume_profile.skill_matches,
+                ai_feedback=ai_feedback,
             )
         self.show_report()
 
