@@ -13,6 +13,7 @@ from __future__ import annotations
 import io
 import logging
 import threading
+import queue
 from typing import Optional, Callable
 
 import numpy as np
@@ -41,11 +42,10 @@ class AudioManager:
         # Callbacks registered by other modules
         self._on_frame_callbacks: list[Callable[[bytes], None]] = []
 
-        # Playback buffer (FIFO of MP3/PCM chunks)
-        self._playback_queue: list[bytes] = []
-        self._mp3_buffer = b""
-        self._pydub = None
-        self._ffmpeg_available = self._check_ffmpeg()
+        # Playback buffer
+        self._playback_queue_obj = queue.Queue()
+        self._playback_thread: Optional[threading.Thread] = None
+        self._stop_playback = threading.Event()
 
     # ── Initialization ────────────────────────────────────────────────────────
 
@@ -56,6 +56,11 @@ class AudioManager:
         self._open_input_stream()
         self._open_output_stream()
         self._is_running = True
+        
+        self._stop_playback.clear()
+        self._playback_thread = threading.Thread(target=self._playback_worker, daemon=True)
+        self._playback_thread.start()
+        
         logger.info("AudioManager initialized")
 
     def _open_input_stream(self):
@@ -75,7 +80,7 @@ class AudioManager:
         self._output_stream = self._pa.open(
             format=pyaudio.paInt16,
             channels=1,
-            rate=22050,            # ElevenLabs default output rate
+            rate=16000,            # Match incoming PCM output rate
             output=True,
             frames_per_buffer=1024,
         )
@@ -99,51 +104,49 @@ class AudioManager:
 
     # ── Playback API ──────────────────────────────────────────────────────────
 
-    def play_audio_chunk(self, mp3_bytes: bytes):
+    def play_audio_chunk(self, pcm_bytes: bytes):
         """
-        Accepts MP3 chunks from TTS stream and plays them.
-        Decodes MP3 → PCM using pydub/ffmpeg if available,
-        otherwise buffers and attempts to play raw.
+        Accepts raw PCM chunks from TTS stream and queues them for playback.
+        Assumes 16kHz 16-bit mono PCM.
         """
-        self._mp3_buffer += mp3_bytes
-        # Attempt decode when we have enough data
-        if len(self._mp3_buffer) >= 8192:
-            self._flush_mp3_buffer()
+        if pcm_bytes:
+            self._playback_queue_obj.put(pcm_bytes)
+
+    def _playback_worker(self):
+        """Background thread that consumes PCM chunks and freely writes to PyAudio.
+        Pre-buffers only on first utterance to avoid audio glitches at cold start.
+        Subsequent utterances are played immediately as chunks arrive.
+        """
+        buffer = bytearray()
+        WRITE_SLICE = 512     # 512 bytes = ~16ms — small enough for smooth flow
+        playing = False       # Once True, never wait for pre-buffer again
+
+        while not self._stop_playback.is_set():
+            try:
+                pcm_bytes = self._playback_queue_obj.get(timeout=0.02)
+                buffer.extend(pcm_bytes)
+            except queue.Empty:
+                pass
+
+            # Only pre-buffer on very first startup (~32ms); never block again after
+            if not playing:
+                if len(buffer) < 1024:
+                    continue
+                playing = True
+
+            # Write in fixed slices — thread never blocks more than ~16ms at once
+            while len(buffer) >= WRITE_SLICE and self._output_stream:
+                chunk = bytes(buffer[:WRITE_SLICE])
+                del buffer[:WRITE_SLICE]
+                try:
+                    self._output_stream.write(chunk)
+                except Exception as e:
+                    logger.warning(f"PCM playback error: {e}")
+                    break
 
     def flush_playback(self):
-        """Flush remaining MP3 buffer at end of TTS stream."""
-        if self._mp3_buffer:
-            self._flush_mp3_buffer()
-
-    def _flush_mp3_buffer(self):
-        try:
-            pcm_data = self._decode_mp3(self._mp3_buffer)
-            if pcm_data and self._output_stream:
-                with self._playback_lock:
-                    self._output_stream.write(pcm_data)
-        except Exception as e:
-            logger.warning(f"MP3 decode/playback error: {e}")
-        finally:
-            self._mp3_buffer = b""
-
-    def _decode_mp3(self, mp3_bytes: bytes) -> Optional[bytes]:
-        """Decode MP3 to raw PCM. Uses pydub if available."""
-        try:
-            from pydub import AudioSegment
-            segment = AudioSegment.from_mp3(io.BytesIO(mp3_bytes))
-            segment = segment.set_frame_rate(22050).set_channels(1).set_sample_width(2)
-            return segment.raw_data
-        except ImportError:
-            # pydub not available — try soundfile
-            try:
-                import soundfile as sf
-                data, sr = sf.read(io.BytesIO(mp3_bytes), dtype="int16")
-                return data.tobytes()
-            except Exception:
-                return None
-        except Exception as e:
-            logger.debug(f"MP3 decode failed: {e}")
-            return None
+        """No-op for raw PCM streaming."""
+        pass
 
     def _check_ffmpeg(self) -> bool:
         import subprocess
@@ -168,6 +171,10 @@ class AudioManager:
 
     def shutdown(self):
         self._is_running = False
+        self._stop_playback.set()
+        if self._playback_thread:
+            self._playback_thread.join(timeout=1.0)
+            
         if self._input_stream:
             self._input_stream.stop_stream()
             self._input_stream.close()

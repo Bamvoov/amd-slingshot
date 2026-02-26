@@ -125,12 +125,38 @@ class TextExtractor:
 
     @staticmethod
     def extract_pdf(path: Path) -> str:
-        import fitz  # PyMuPDF
-        text_chunks = []
-        with fitz.open(str(path)) as doc:
-            for page in doc:
-                text_chunks.append(page.get_text("text"))
-        return "\n".join(text_chunks)
+        try:
+            import fitz  # PyMuPDF
+            text_chunks = []
+            with fitz.open(str(path)) as doc:
+                for page in doc:
+                    try:
+                        text_chunks.append(page.get_text("text"))
+                    except Exception:
+                        # Some pages may fail (scanned images, etc.)
+                        continue
+            text = "\n".join(text_chunks)
+            if text.strip():
+                return text
+        except Exception as e:
+            logger.warning(f"PyMuPDF failed: {e}, trying fallback...")
+
+        # Fallback: try pdfplumber (handles more PDF variants)
+        try:
+            import pdfplumber
+            text_chunks = []
+            with pdfplumber.open(str(path)) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_chunks.append(page_text)
+            return "\n".join(text_chunks)
+        except ImportError:
+            raise RuntimeError(
+                "PDF extraction failed. Install pdfplumber as fallback: pip install pdfplumber"
+            )
+        except Exception as e:
+            raise RuntimeError(f"Could not extract text from PDF: {e}")
 
     @staticmethod
     def extract_docx(path: Path) -> str:
@@ -381,40 +407,44 @@ class ResumeIntelligenceEngine:
         self.parser = ResumeParser()
         self.matcher = SemanticMatcher()
 
-    def process(self, file_path: str | Path, job_role: str = "Software Engineer", progress_callback=None) -> ResumeProfile:
+    def process(self, file_path: str | Path, job_role: str = "Software Engineer",
+                progress_callback=None) -> ResumeProfile:
+        def _report(pct, msg):
+            if progress_callback:
+                progress_callback(pct, msg)
+
         logger.info(f"Processing resume: {file_path} for role: {job_role}")
 
         # Step 1: Extract raw text
-        if progress_callback:
-            progress_callback(10, "Extracting raw text from document...")
-            
+        _report(5, "Extracting text from document...")
         raw_text = self.extractor.extract(file_path)
         if len(raw_text.strip()) < 50:
             raise ValueError("Resume appears to be empty or unreadable. Try a different file.")
+        _report(15, "Text extracted successfully")
 
         # Step 2: Parse structured info
-        if progress_callback:
-            progress_callback(30, "Parsing resume structure and experience...")
-            
+        _report(20, "Identifying candidate name...")
         name = self.parser.extract_name(raw_text)
+        _report(25, "Extracting contact information...")
         contact = self.parser.extract_contact(raw_text)
+        _report(30, "Parsing education history...")
         education = self.parser.extract_education(raw_text)
+        _report(35, "Analyzing work experience...")
         work_exp = self.parser.extract_work_experience(raw_text)
+        _report(42, "Detecting technical skills...")
         detected_skills = self.parser.extract_skills_vocab(raw_text)
+        _report(48, "Estimating years of experience...")
         years_exp = self.parser.estimate_years_experience(raw_text)
 
         # Step 3: Semantic skill matching
-        if progress_callback:
-            progress_callback(60, f"Evaluating skills against {job_role} requirements...")
-            
+        _report(55, "Loading AI models for skill matching...")
         logger.info("Running semantic skill matching (sentence-transformers)...")
         skill_matches = self.matcher.match_skills(raw_text, job_role)
+        _report(78, "Computing readiness score...")
         readiness = self.matcher.compute_readiness(skill_matches)
 
         # Step 4: Detect red flags
-        if progress_callback:
-            progress_callback(85, "Analyzing profile and detecting red flags...")
-            
+        _report(85, "Analyzing red flags...")
         red_flags = []
         if years_exp == 0:
             red_flags.append("No work experience detected")
@@ -424,9 +454,7 @@ class ResumeIntelligenceEngine:
             red_flags.append(f"Low role match ({readiness}%) — significant skill gaps")
 
         # Step 5: Build profile
-        if progress_callback:
-            progress_callback(95, "Finalizing candidate profile...")
-            
+        _report(90, "Building candidate profile...")
         profile = ResumeProfile(
             raw_text=raw_text,
             candidate_name=name,
@@ -443,14 +471,11 @@ class ResumeIntelligenceEngine:
         )
 
         # Step 6: Build LLM prompt summary (after profile is complete)
+        _report(95, "Generating interview briefing...")
         profile.summary_for_llm = build_llm_summary(profile)
 
+        _report(100, "Resume analysis complete!")
         logger.info(f"Resume processed. Readiness: {readiness}% | Skills: {len(detected_skills)}")
-        
-        # Step 7: Complete
-        if progress_callback:
-            progress_callback(100, "Analysis complete!")
-            
         return profile
 
 

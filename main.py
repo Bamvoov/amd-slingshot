@@ -1,6 +1,8 @@
 """
 AI Interviewer — Entry Point
 ==============================
+Loads environment variables, validates API keys,
+and launches the PyQt6 application.
 """
 
 import sys
@@ -62,7 +64,6 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("AI Interviewer")
     app.setApplicationVersion("2.0.0")
-    app.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps)
 
     # Load custom fonts if available
     fonts_dir = Path(__file__).parent / "assets" / "fonts"
@@ -73,7 +74,7 @@ def main():
     # Set default app font
     app.setFont(QFont("Outfit", 12))
 
-    from gui.main_window import MainWindow
+    from main_window import MainWindow
     window = MainWindow()
     window.show()
 

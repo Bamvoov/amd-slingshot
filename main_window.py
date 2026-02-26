@@ -14,14 +14,12 @@ Fonts: JetBrains Mono (monospace), Outfit (sans)
 
 from __future__ import annotations
 
-
 import os
 import sys
 import time
 import logging
 from pathlib import Path
 from typing import Optional
-from PyQt6.QtWidgets import QMainWindow
 
 import numpy as np
 from PyQt6.QtCore import (
@@ -45,130 +43,130 @@ logger = logging.getLogger(__name__)
 # ─── Color Palette ────────────────────────────────────────────────────────────
 
 COLORS = {
-    "bg_dark": "#f8f9fa",         # Google Light Grey Background
+    "bg_dark": "#f8f9fa",         # Light Grey Background
     "bg_panel": "#ffffff",        # Pure White Surface Cards
     "bg_glass": "#ffffff",        # Now solid white (legacy naming)
     "border": "#dadce0",          # Light Material Border
-    "border_active": "#1a73e8",   # Google Blue Active
-    "cyan": "#1a73e8",            # Alias for primary Google Blue
-    "cyan_dim": "#4285f4",        # Google Blue Lighter
-    "amber": "#f29900",           # Google Yellow/Amber
-    "green": "#1e8e3e",           # Google Green
-    "red": "#d93025",             # Google Red
+    "border_active": "#1a73e8",   # Blue Active
+    "cyan": "#1a73e8",            # Primary Blue
+    "cyan_dim": "#4285f4",        # Blue Lighter
+    "amber": "#f29900",           # Yellow/Amber
+    "green": "#1e8e3e",           # Green
+    "red": "#d93025",             # Red
     "purple": "#9333ea",          # A generic deep purple
-    "text_primary": "#202124",    # Google High-Contrast Text
-    "text_secondary": "#5f6368",  # Google Muted Text
-    "text_accent": "#1a73e8",     # Google Blue Accent
+    "text_primary": "#202124",    # High-Contrast Text
+    "text_secondary": "#5f6368",  # Muted Text
+    "text_accent": "#1a73e8",     # Blue Accent
 }
 
 STYLESHEET = """
 QMainWindow, QWidget {
-    background-color: #040812;
-    color: #e2e8f0;
-    font-family: 'Outfit', 'Segoe UI', sans-serif;
+    background-color: #f8f9fa;
+    color: #202124;
+    font-family: 'Roboto', 'Segoe UI', sans-serif;
 }
 
-QLabel { color: #e2e8f0; }
+QLabel { color: #202124; }
 QLabel#heading { 
-    font-size: 28px; font-weight: 700; 
-    color: #e2e8f0; letter-spacing: 1px;
+    font-size: 28px; font-weight: 500; 
+    color: #202124; letter-spacing: -0.5px;
 }
 QLabel#subheading { 
-    font-size: 14px; color: #64748b; letter-spacing: 0.5px;
+    font-size: 14px; color: #5f6368; letter-spacing: 0px;
 }
-QLabel#accent { color: #00d4ff; font-weight: 600; }
+QLabel#accent { color: #1a73e8; font-weight: 500; }
 QLabel#mono {
-    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
-    font-size: 12px; color: #00d4ff;
+    font-family: 'Roboto Mono', 'Consolas', monospace;
+    font-size: 12px; color: #1a73e8;
 }
 
 QPushButton {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #00d4ff, stop:1 #0099bb);
-    color: #040812; font-weight: 700; font-size: 14px;
-    border: none; border-radius: 8px; padding: 12px 28px;
-    letter-spacing: 0.5px;
+    background: #1a73e8;
+    color: white; font-weight: 500; font-size: 14px;
+    border: none; border-radius: 20px; padding: 10px 24px;
+    letter-spacing: 0.25px;
 }
 QPushButton:hover {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #33ddff, stop:1 #00aacc);
+    background: #1557b0;
 }
-QPushButton:pressed { background: #007799; }
-QPushButton:disabled { background: #1e293b; color: #475569; }
+QPushButton:pressed { background: #124089; }
+QPushButton:disabled { background: #e8eaed; color: #9aa0a6; }
 
 QPushButton#danger {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-        stop:0 #ef4444, stop:1 #dc2626);
+    background: #d93025;
     color: white;
 }
-QPushButton#ghost {
-    background: transparent; color: #00d4ff;
-    border: 1px solid rgba(0, 212, 255, 40);
+QPushButton#danger:hover {
+    background: #a50e0e;
 }
-QPushButton#ghost:hover { border-color: #00d4ff; background: rgba(0, 212, 255, 10); }
+QPushButton#ghost {
+    background: transparent; color: #1a73e8;
+    border: 1px solid #dadce0; border-radius: 20px;
+}
+QPushButton#ghost:hover { border-color: #1a73e8; background: #e8f0fe; }
 
 QComboBox {
-    background: #0c1220; border: 1px solid rgba(0, 212, 255, 30);
-    border-radius: 8px; padding: 10px 16px; color: #e2e8f0;
-    font-size: 13px; min-width: 200px;
+    background: #ffffff; border: 1px solid #dadce0;
+    border-radius: 8px; padding: 10px 16px; color: #202124;
+    font-size: 14px; min-width: 200px;
 }
-QComboBox:hover { border-color: rgba(0, 212, 255, 80); }
+QComboBox:hover { border-color: #1a73e8; }
 QComboBox::drop-down { border: none; width: 30px; }
 QComboBox::down-arrow { 
     image: none; border-left: 4px solid transparent;
     border-right: 4px solid transparent;
-    border-top: 6px solid #00d4ff; margin-right: 10px;
+    border-top: 6px solid #5f6368; margin-right: 10px;
 }
 QComboBox QAbstractItemView {
-    background: #0c1220; border: 1px solid rgba(0, 212, 255, 40);
-    selection-background-color: rgba(0, 212, 255, 20);
-    color: #e2e8f0;
+    background: #ffffff; border: 1px solid #dadce0;
+    selection-background-color: #e8f0fe;
+    color: #202124;
 }
 
 QScrollBar:vertical {
-    background: transparent; width: 6px; margin: 0;
+    background: transparent; width: 8px; margin: 0;
 }
 QScrollBar::handle:vertical {
-    background: rgba(0, 212, 255, 30); border-radius: 3px; min-height: 20px;
+    background: #dadce0; border-radius: 4px; min-height: 20px;
 }
-QScrollBar::handle:vertical:hover { background: rgba(0, 212, 255, 60); }
+QScrollBar::handle:vertical:hover { background: #bdc1c6; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 
 QTextEdit {
-    background: #060d1a; border: 1px solid rgba(0, 212, 255, 15);
-    border-radius: 8px; color: #cbd5e1; font-size: 13px;
+    background: #ffffff; border: 1px solid #dadce0;
+    border-radius: 8px; color: #3c4043; font-size: 14px;
     padding: 12px; line-height: 1.6;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Roboto', sans-serif;
 }
 
 QProgressBar {
-    background: #0c1220; border: none; border-radius: 4px; height: 6px;
+    background: #f1f3f4; border: none; border-radius: 4px; height: 6px;
 }
-QProgressBar::chunk { background: #00d4ff; border-radius: 4px; }
+QProgressBar::chunk { background: #1a73e8; border-radius: 4px; }
 
 QFrame#glass {
-    background: rgba(12, 18, 32, 180);
-    border: 1px solid rgba(0, 212, 255, 15);
+    background: #ffffff;
+    border: 1px solid #e8eaed;
     border-radius: 12px;
 }
 QFrame#glass_active {
-    background: rgba(12, 18, 32, 200);
-    border: 1px solid rgba(0, 212, 255, 60);
+    background: #ffffff;
+    border: 1px solid #1a73e8;
     border-radius: 12px;
 }
 """
 
 
-# ─── Reusable Glass Card Widget ───────────────────────────────────────────────
+# ─── Reusable Material Card Widget ───────────────────────────────────────────────
 
-class GlassCard(QFrame):
+class MaterialCard(QFrame):
     def __init__(self, parent=None, active=False):
         super().__init__(parent)
         self.setObjectName("glass_active" if active else "glass")
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(20)
-        shadow.setColor(QColor(0, 212, 255, 30))
-        shadow.setOffset(0, 4)
+        shadow.setBlurRadius(15)
+        shadow.setColor(QColor(0, 0, 0, 20))  # Standard Material Elevation shadow
+        shadow.setOffset(0, 2)
         self.setGraphicsEffect(shadow)
 
     def set_active(self, active: bool):
@@ -186,12 +184,12 @@ class MetricBadge(QWidget):
         layout.setSpacing(4)
 
         self.value_label = QLabel(value)
-        self.value_label.setFont(QFont("JetBrains Mono", 22, QFont.Weight.Bold))
+        self.value_label.setFont(QFont("Roboto", 22, QFont.Weight.Bold))
         self.value_label.setStyleSheet(f"color: {color};")
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.label_text = QLabel(label.upper())
-        self.label_text.setStyleSheet("color: #475569; font-size: 10px; letter-spacing: 1px;")
+        self.label_text.setStyleSheet("color: #5f6368; font-size: 11px; font-weight: 500; letter-spacing: 1px;")
         self.label_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         layout.addWidget(self.value_label)
@@ -201,6 +199,119 @@ class MetricBadge(QWidget):
         self.value_label.setText(value)
         if color:
             self.value_label.setStyleSheet(f"color: {color};")
+
+
+# ─── Mic State Indicator Widget ──────────────────────────────────────────────
+
+class MicIndicatorWidget(QWidget):
+    """Animated microphone state indicator.
+    - LISTENING: pulsing green mic icon
+    - AI_SPEAKING: bouncing orange wave icon
+    """
+    LISTENING = "listening"
+    AI_SPEAKING = "ai_speaking"
+    IDLE = "idle"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(120, 40)
+        self._state = self.IDLE
+        self._pulse = 0.0
+        self._pulse_dir = 1
+
+        self._anim_timer = QTimer()
+        self._anim_timer.timeout.connect(self._tick)
+        self._anim_timer.start(40)  # 25 fps
+
+    def set_listening(self):
+        self._state = self.LISTENING
+        self.update()
+
+    def set_ai_speaking(self):
+        self._state = self.AI_SPEAKING
+        self.update()
+
+    def set_idle(self):
+        self._state = self.IDLE
+        self.update()
+
+    def _tick(self):
+        self._pulse += 0.08 * self._pulse_dir
+        if self._pulse >= 1.0:
+            self._pulse = 1.0
+            self._pulse_dir = -1
+        elif self._pulse <= 0.0:
+            self._pulse = 0.0
+            self._pulse_dir = 1
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+
+        if self._state == self.LISTENING:
+            # Pulsing green ring + mic icon
+            pulse_radius = int(12 + self._pulse * 5)
+            cx, cy = 18, h // 2
+            ring_color = QColor(30, 142, 62, int(80 - self._pulse * 60))
+            painter.setBrush(QBrush(ring_color))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(cx - pulse_radius, cy - pulse_radius,
+                                pulse_radius * 2, pulse_radius * 2)
+
+            painter.setBrush(QBrush(QColor(30, 142, 62)))
+            painter.drawEllipse(cx - 9, cy - 9, 18, 18)
+
+            # Mic symbol (white)
+            painter.setPen(QPen(QColor(255, 255, 255), 2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(cx - 4, cy - 7, 8, 10, 3, 3)
+            painter.drawArc(cx - 6, cy - 2, 12, 8, 0, -180 * 16)
+            painter.drawLine(cx, cy + 5, cx, cy + 8)
+
+            # "LISTENING" text
+            painter.setPen(QColor(30, 142, 62))
+            painter.setFont(QFont("Roboto", 9, QFont.Weight.Medium))
+            painter.drawText(32, 0, w - 32, h, Qt.AlignmentFlag.AlignVCenter, "LISTENING")
+
+        elif self._state == self.AI_SPEAKING:
+            # Bouncing orange bars (soundwave)
+            cx, cy = 18, h // 2
+            painter.setBrush(QBrush(QColor(242, 153, 0)))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(cx - 9, cy - 9, 18, 18)
+
+            # White bars
+            painter.setBrush(QBrush(QColor(255, 255, 255)))
+            bar_heights = [4, 8, 11, 8, 4]
+            bar_w = 2
+            start_x = cx - 7
+            for i, bh in enumerate(bar_heights):
+                anim_h = int(bh * (0.5 + 0.5 * abs(self._pulse - (i / 4))))
+                anim_h = max(2, min(anim_h, 12))
+                painter.drawRoundedRect(
+                    start_x + i * 3, cy - anim_h // 2, bar_w, anim_h, 1, 1
+                )
+
+            painter.setPen(QColor(242, 153, 0))
+            painter.setFont(QFont("Roboto", 9, QFont.Weight.Medium))
+            painter.drawText(32, 0, w - 32, h, Qt.AlignmentFlag.AlignVCenter, "AI SPEAKING")
+
+        else:
+            # Idle grey
+            cx, cy = 18, h // 2
+            painter.setBrush(QBrush(QColor(218, 220, 224)))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(cx - 9, cy - 9, 18, 18)
+            painter.setPen(QPen(QColor(255, 255, 255), 2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(cx - 4, cy - 7, 8, 10, 3, 3)
+            painter.drawArc(cx - 6, cy - 2, 12, 8, 0, -180 * 16)
+            painter.drawLine(cx, cy + 5, cx, cy + 8)
+            painter.setPen(QColor(154, 160, 166))
+            painter.setFont(QFont("Roboto", 9))
+            painter.drawText(32, 0, w - 32, h, Qt.AlignmentFlag.AlignVCenter, "IDLE")
 
 
 # ─── Live Waveform Widget ─────────────────────────────────────────────────────
@@ -240,7 +351,7 @@ class WaveformWidget(QWidget):
         mid = h // 2
 
         # Background
-        painter.fillRect(0, 0, w, h, QColor(6, 13, 26))
+        painter.fillRect(0, 0, w, h, QColor(255, 255, 255))
 
         if not self._is_active:
             # Idle pulse (sinusoidal)
@@ -250,7 +361,7 @@ class WaveformWidget(QWidget):
             self._draw_audio_wave(painter, w, h, mid)
 
     def _draw_idle_wave(self, painter, w, h, mid):
-        pen = QPen(QColor(26, 115, 232, 40))  # Google Blue fading
+        pen = QPen(QColor(26, 115, 232, 40))  # Blue fading
         pen.setWidth(1)
         painter.setPen(pen)
         step = w / 60
@@ -263,9 +374,9 @@ class WaveformWidget(QWidget):
         n = len(self._samples)
         step = w / n
 
-        # Glow effect — draw 3 layers (Google Blue shadow)
+        # Glow effect — draw 3 layers (Blue shadow)
         for glow_alpha, glow_width, glow_mult in [(15, 6, 1.2), (40, 3, 1.0), (200, 1, 0.9)]:
-            pen = QPen(QColor(0, 212, 255, glow_alpha))
+            pen = QPen(QColor(26, 115, 232, glow_alpha))
             pen.setWidth(glow_width)
             painter.setPen(pen)
 
@@ -325,7 +436,7 @@ class PhaseTrackerWidget(QWidget):
 
             # Connector line
             if i < n - 1:
-                color = QColor(0, 212, 255, 120 if is_done else 25)
+                color = QColor(26, 115, 232, 120 if is_done else 25)
                 painter.setPen(QPen(color, 1))
                 painter.drawLine(int(x + seg_w * 0.55), h // 2,
                                  int(x + seg_w * 0.95), h // 2)
@@ -335,23 +446,23 @@ class PhaseTrackerWidget(QWidget):
             cy = h // 2
 
             if is_active:
-                painter.setBrush(QBrush(QColor(0, 212, 255)))
-                painter.setPen(QPen(QColor(0, 212, 255), 2))
+                painter.setBrush(QBrush(QColor(26, 115, 232)))
+                painter.setPen(QPen(QColor(26, 115, 232), 2))
                 painter.drawEllipse(cx - 7, cy - 7, 14, 14)
             elif is_done:
-                painter.setBrush(QBrush(QColor(16, 185, 129)))
-                painter.setPen(QPen(QColor(16, 185, 129), 1))
+                painter.setBrush(QBrush(QColor(30, 142, 62)))
+                painter.setPen(QPen(QColor(30, 142, 62), 1))
                 painter.drawEllipse(cx - 5, cy - 5, 10, 10)
             else:
-                painter.setBrush(QBrush(QColor(30, 41, 59)))
-                painter.setPen(QPen(QColor(71, 85, 105), 1))
+                painter.setBrush(QBrush(QColor(241, 243, 244)))
+                painter.setPen(QPen(QColor(218, 220, 224), 1))
                 painter.drawEllipse(cx - 5, cy - 5, 10, 10)
 
             # Label
-            font = QFont("Outfit", 8)
+            font = QFont("Roboto", 9, QFont.Weight.Medium)
             painter.setFont(font)
-            painter.setPen(QColor(0, 212, 255) if is_active else
-                           QColor(100, 116, 139) if not is_done else QColor(16, 185, 129))
+            painter.setPen(QColor(26, 115, 232) if is_active else
+                           QColor(154, 160, 166) if not is_done else QColor(30, 142, 62))
             painter.drawText(int(x), h - 2, int(seg_w), 12,
                              Qt.AlignmentFlag.AlignHCenter, phase)
 
@@ -359,7 +470,7 @@ class PhaseTrackerWidget(QWidget):
 # ─── Landing Screen ───────────────────────────────────────────────────────────
 
 class LandingScreen(QWidget):
-    start_interview = pyqtSignal(str, str)  # file_path, job_role
+    start_interview = pyqtSignal(str, str, int)  # file_path, job_role, duration_minutes
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -374,13 +485,13 @@ class LandingScreen(QWidget):
 
         # ── Header ──────────────────────────────────────────────────────
         header = QHBoxLayout()
-        logo_label = QLabel("Google Interviewer AI")
+        logo_label = QLabel("Slingshot Interviewer AI")
         logo_label.setStyleSheet(
-            "font-family: 'JetBrains Mono', monospace; font-size: 16px;"
-            "color: #00d4ff; font-weight: 700; letter-spacing: 3px;"
+            "font-family: 'Product Sans', 'Roboto', sans-serif; font-size: 20px;"
+            "color: #5f6368; font-weight: 500; letter-spacing: 0px;"
         )
-        version_label = QLabel("v2.0 · BETA")
-        version_label.setStyleSheet("color: #1e3a5f; font-size: 11px; letter-spacing: 2px;")
+        version_label = QLabel("v2.0 Beta")
+        version_label.setStyleSheet("color: #1a73e8; font-size: 12px; font-weight: 500;")
         header.addWidget(logo_label)
         header.addStretch()
         header.addWidget(version_label)
@@ -388,21 +499,21 @@ class LandingScreen(QWidget):
         layout.addSpacing(60)
 
         # ── Hero text ────────────────────────────────────────────────────
-        hero_card = GlassCard()
+        hero_card = MaterialCard()
         hero_layout = QVBoxLayout(hero_card)
         hero_layout.setContentsMargins(60, 50, 60, 50)
         hero_layout.setSpacing(16)
 
         title = QLabel("Your AI Interview\nSession Begins Here")
         title.setStyleSheet(
-            "font-size: 42px; font-weight: 800; color: #e2e8f0; line-height: 1.2;"
+            "font-size: 40px; font-weight: 400; color: #202124; line-height: 1.2;"
         )
         title.setWordWrap(True)
 
         subtitle = QLabel(
             "Upload your resume · Select your target role · Begin your adaptive voice viva"
         )
-        subtitle.setStyleSheet("font-size: 15px; color: #475569; letter-spacing: 0.3px;")
+        subtitle.setStyleSheet("font-size: 16px; color: #5f6368;")
 
         hero_layout.addWidget(title)
         hero_layout.addWidget(subtitle)
@@ -417,7 +528,7 @@ class LandingScreen(QWidget):
         # ── Job Role Row ──────────────────────────────────────────────
         role_row = QHBoxLayout()
         role_label = QLabel("Target Role:")
-        role_label.setStyleSheet("color: #94a3b8; font-size: 13px;")
+        role_label.setStyleSheet("color: #5f6368; font-size: 14px; font-weight: 500;")
 
         self.role_combo = QComboBox()
         roles = [
@@ -430,6 +541,24 @@ class LandingScreen(QWidget):
 
         role_row.addWidget(role_label)
         role_row.addWidget(self.role_combo)
+        role_row.addSpacing(20)
+
+        # ── Duration Row ──────────────────────────────────────────────
+        duration_label = QLabel("Duration:")
+        duration_label.setStyleSheet("color: #5f6368; font-size: 14px; font-weight: 500;")
+
+        self.duration_combo = QComboBox()
+        durations = [
+            ("10 Minutes", 10),
+            ("20 Minutes", 20),
+            ("30 Minutes", 30),
+            ("45 Minutes", 45),
+        ]
+        for label, val in durations:
+            self.duration_combo.addItem(label, val)
+
+        role_row.addWidget(duration_label)
+        role_row.addWidget(self.duration_combo)
         role_row.addStretch()
         hero_layout.addLayout(role_row)
         hero_layout.addSpacing(28)
@@ -446,7 +575,7 @@ class LandingScreen(QWidget):
 
         # ── Status bar ─────────────────────────────────────────────────
         self.status_label = QLabel("Upload a PDF or DOCX resume to get started")
-        self.status_label.setStyleSheet("color: #334155; font-size: 12px; font-family: monospace;")
+        self.status_label.setStyleSheet("color: #5f6368; font-size: 13px;")
         layout.addWidget(self.status_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
     def _on_file_selected(self, path: str):
@@ -454,11 +583,12 @@ class LandingScreen(QWidget):
         self.start_btn.setEnabled(True)
         fname = Path(path).name
         self.status_label.setText(f"✓ Loaded: {fname}")
-        self.status_label.setStyleSheet("color: #10b981; font-size: 12px; font-family: monospace;")
+        self.status_label.setStyleSheet("color: #1e8e3e; font-size: 13px; font-weight: 500;")
 
     def _on_start(self):
         if self._file_path:
-            self.start_interview.emit(self._file_path, self.role_combo.currentText())
+            duration = self.duration_combo.currentData()
+            self.start_interview.emit(self._file_path, self.role_combo.currentText(), duration)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -573,20 +703,20 @@ class InterviewScreen(QWidget):
 
         self.candidate_label = QLabel("CANDIDATE: —")
         self.candidate_label.setStyleSheet(
-            "font-family: 'JetBrains Mono', monospace; font-size: 12px; "
-            "color: #00d4ff; letter-spacing: 2px;"
+            "font-family: 'Roboto Mono', monospace; font-size: 13px; "
+            "color: #1a73e8; letter-spacing: 1px; font-weight: 500;"
         )
 
         self.timer_label = QLabel("00:00")
         self.timer_label.setStyleSheet(
-            "font-family: 'JetBrains Mono', monospace; font-size: 20px; "
-            "color: #f59e0b; font-weight: 700;"
+            "font-family: 'Roboto Mono', monospace; font-size: 22px; "
+            "color: #202124; font-weight: 700;"
         )
 
         self.phase_badge = QLabel("● INTRO")
         self.phase_badge.setStyleSheet(
-            "font-size: 11px; color: #00d4ff; letter-spacing: 2px; "
-            "background: rgba(0,212,255,12); padding: 4px 10px; border-radius: 4px;"
+            "font-size: 12px; color: #1a73e8; letter-spacing: 1px; font-weight: 500; "
+            "background: #e8f0fe; padding: 6px 12px; border-radius: 6px;"
         )
 
         top_bar.addWidget(self.candidate_label)
@@ -608,17 +738,17 @@ class InterviewScreen(QWidget):
         left_col = QVBoxLayout()
         left_col.setSpacing(12)
 
-        ai_card = GlassCard()
+        ai_card = MaterialCard()
         ai_layout = QVBoxLayout(ai_card)
         ai_layout.setContentsMargins(20, 16, 20, 16)
         ai_label = QLabel("AI INTERVIEWER")
         ai_label.setStyleSheet(
-            "font-size: 10px; color: #1e3a5f; letter-spacing: 3px; font-family: monospace;"
+            "font-size: 11px; color: #5f6368; letter-spacing: 2px; font-weight: 500;"
         )
         self.ai_text = QLabel("Initializing session...")
         self.ai_text.setWordWrap(True)
         self.ai_text.setStyleSheet(
-            "font-size: 16px; color: #e2e8f0; line-height: 1.7; padding: 8px 0;"
+            "font-size: 18px; color: #202124; line-height: 1.6; padding: 8px 0; font-weight: 400;"
         )
         self.ai_text.setMinimumHeight(100)
         ai_layout.addWidget(ai_label)
@@ -626,17 +756,18 @@ class InterviewScreen(QWidget):
         left_col.addWidget(ai_card)
 
         # Waveform card
-        wave_card = GlassCard()
+        wave_card = MaterialCard()
         wave_layout = QVBoxLayout(wave_card)
         wave_layout.setContentsMargins(16, 12, 16, 12)
         wave_header = QHBoxLayout()
         wave_title = QLabel("MICROPHONE")
-        wave_title.setStyleSheet("font-size: 10px; color: #1e3a5f; letter-spacing: 3px; font-family: monospace;")
+        wave_title.setStyleSheet("font-size: 11px; color: #5f6368; letter-spacing: 2px; font-weight: 500;")
         self.mic_status = QLabel("● LISTENING")
         self.mic_status.setStyleSheet("font-size: 10px; color: #10b981; letter-spacing: 1px;")
         wave_header.addWidget(wave_title)
         wave_header.addStretch()
-        wave_header.addWidget(self.mic_status)
+        self.mic_indicator = MicIndicatorWidget()
+        wave_header.addWidget(self.mic_indicator)
         self.waveform = WaveformWidget()
         wave_layout.addLayout(wave_header)
         wave_layout.addWidget(self.waveform)
@@ -651,7 +782,7 @@ class InterviewScreen(QWidget):
         self.metric_phase = MetricBadge("Q Count", "0", COLORS["purple"])
 
         for m in [self.metric_confidence, self.metric_wpm, self.metric_stutter, self.metric_phase]:
-            card = GlassCard()
+            card = MaterialCard()
             card_layout = QVBoxLayout(card)
             card_layout.setContentsMargins(0, 0, 0, 0)
             card_layout.addWidget(m)
@@ -664,12 +795,12 @@ class InterviewScreen(QWidget):
         right_col = QVBoxLayout()
         right_col.setSpacing(12)
 
-        transcript_card = GlassCard()
+        transcript_card = MaterialCard()
         t_layout = QVBoxLayout(transcript_card)
         t_layout.setContentsMargins(16, 12, 16, 16)
         t_header = QHBoxLayout()
         t_title = QLabel("LIVE TRANSCRIPT")
-        t_title.setStyleSheet("font-size: 10px; color: #1e3a5f; letter-spacing: 3px; font-family: monospace;")
+        t_title.setStyleSheet("font-size: 11px; color: #5f6368; letter-spacing: 2px; font-weight: 500;")
         self.transcript_count = QLabel("0 exchanges")
         self.transcript_count.setStyleSheet("font-size: 10px; color: #334155;")
         t_header.addWidget(t_title)
@@ -696,6 +827,7 @@ class InterviewScreen(QWidget):
 
         # ── Timer ──────────────────────────────────────────────────────
         self._start_time = time.time()
+        self._duration_seconds = 0
         self._exchange_count = 0
         self._timer = QTimer()
         self._timer.timeout.connect(self._update_timer)
@@ -703,12 +835,29 @@ class InterviewScreen(QWidget):
 
     def _update_timer(self):
         elapsed = int(time.time() - self._start_time)
-        m, s = divmod(elapsed, 60)
+        remaining = max(0, self._duration_seconds - elapsed)
+        
+        m, s = divmod(remaining, 60)
         self.timer_label.setText(f"{m:02d}:{s:02d}")
+        
+        # When time runs out, disable button and auto-end
+        if remaining == 0 and self.end_btn.isEnabled():
+            self.end_btn.setEnabled(False)
+            self.end_btn.setText("GENERATING REPORT...")
+            # Fire an event that we reached time
+            parent = self.parent()
+            while parent is not None and not hasattr(parent, 'on_end_interview'):
+                parent = parent.parent()
+            if parent:
+                parent.on_end_interview()
 
-    def set_candidate(self, name: str, role: str):
+    def set_candidate(self, name: str, role: str, duration_minutes: int):
         self.candidate_label.setText(f"CANDIDATE: {name.upper()}  ·  {role.upper()}")
+        self._duration_seconds = duration_minutes * 60
         self._start_time = time.time()
+        self.end_btn.setEnabled(True)
+        self.end_btn.setText("END INTERVIEW")
+        self.mic_indicator.set_listening()
 
     def set_phase(self, phase_name: str):
         self.phase_badge.setText(f"● {phase_name.replace('_', ' ')}")
@@ -782,10 +931,10 @@ class ReportScreen(QWidget):
 
         # Header
         header = QHBoxLayout()
-        title = QLabel("Google Interviewer AI Report")
+        title = QLabel("Slingshot Interviewer AI Report")
         title.setStyleSheet(
-            "font-family: 'JetBrains Mono', monospace; font-size: 18px; "
-            "color: #00d4ff; font-weight: 700; letter-spacing: 3px;"
+            "font-family: 'Product Sans', 'Roboto', sans-serif; font-size: 20px; "
+            "color: #1a73e8; font-weight: 500; letter-spacing: 0px;"
         )
         self.export_btn = QPushButton("EXPORT PDF")
         self.export_btn.setObjectName("ghost")
@@ -1074,65 +1223,6 @@ class ReportScreen(QWidget):
         layout.addWidget(card)
         layout.addStretch()
 
-class FeedbackWorker(QThread):
-    finished = pyqtSignal(str)
-    error = pyqtSignal(str)
-
-    def __init__(self, session_data: dict, parent=None):
-        super().__init__(parent)
-        self.session_data = session_data
-
-    def run(self):
-        try:
-            import httpx
-            import os
-            
-            conversation = self.session_data.get("conversation_history", [])
-            if not conversation:
-                self.finished.emit("")
-                return
-
-            conv_text = "".join(
-                f"{'Interviewer' if msg['role'] == 'assistant' else 'Candidate'}: {msg['content']}\n"
-                for msg in conversation
-            )
-
-            job_role = self.session_data.get("job_role", "Software Engineer")
-            prompt = f"""You are an expert interview coach. Analyze the following {job_role} interview transcript and provide structured feedback.
-
-Please respond in EXACTLY this format (use these exact headers):
-
-What You Did Well:
-- [list 2-3 specific strengths]
-
-Areas for Improvement:
-- [list 3-4 specific things to improve]
-
-Topics to Revise:
-- [list 4-6 specific technical topics to study]
-
-Transcript:
-{conv_text[:4000]}
-"""
-            api_key = os.environ.get("GROQ_API_KEY", "")
-            response = httpx.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={
-                    "model": "llama-3.3-70b-versatile",
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 800,
-                    "temperature": 0.4,
-                },
-                timeout=15.0,
-            )
-            response.raise_for_status()
-            data = response.json()
-            self.finished.emit(data["choices"][0]["message"]["content"])
-        except Exception as e:
-            logger.warning(f"AI feedback generation failed: {e}")
-            self.error.emit(str(e))
-
 
 # ─── Main Application Window ──────────────────────────────────────────────────
 
@@ -1202,7 +1292,7 @@ class MainWindow(QMainWindow):
 
     # ── Session Lifecycle ──────────────────────────────────────────────────────
 
-    def on_start_interview(self, file_path: str, job_role: str):
+    def on_start_interview(self, file_path: str, job_role: str, duration_minutes: int = 20):
         """
         Called when user clicks BEGIN INTERVIEW.
         Runs resume processing + spins up the session worker.
@@ -1280,7 +1370,7 @@ class MainWindow(QMainWindow):
 
         def _process():
             try:
-                from core.resume_engine import ResumeIntelligenceEngine
+                from resume_engine import ResumeIntelligenceEngine
                 engine = ResumeIntelligenceEngine()
                 self._resume_profile = engine.process(
                     file_path, job_role, progress_callback=_progress_callback
@@ -1323,14 +1413,14 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Resume Error", str(result_holder[0]))
             return
 
-        self._launch_session()
+        self._launch_session(duration_minutes)
 
-    def _launch_session(self):
-        from core.voice_pipeline import (
+    def _launch_session(self, duration_minutes: int):
+        from voice_pipeline import (
             InterviewSession, SessionWorker, build_system_prompt, PHASE_SEQUENCE
         )
-        from core.behavioral_analyzer import BehavioralAnalyzer
-        from core.audio_manager import AudioManager
+        from behavioral_analyzer import BehavioralAnalyzer
+        from audio_manager import AudioManager
 
         profile = self._resume_profile
         weak_skills = [
@@ -1381,7 +1471,7 @@ class MainWindow(QMainWindow):
         )
 
         # Update interview screen
-        self.interview.set_candidate(profile.candidate_name, profile.job_role)
+        self.interview.set_candidate(profile.candidate_name, profile.job_role, duration_minutes)
         self.interview.update_question_count(0)
         self.show_interview()
 
@@ -1389,8 +1479,11 @@ class MainWindow(QMainWindow):
         self._session_worker_thread.start()
 
     def on_end_interview(self):
+        """Trigger an early generation of the final score, manually overriding the session loops."""
+        self.interview.end_btn.setEnabled(False)
+        self.interview.end_btn.setText("GENERATING REPORT...")
         if self._session_worker:
-            self._session_worker.stop()
+            self._session_worker.end_session()
 
     def on_export_pdf(self):
         """Export the report as a PDF file."""
@@ -1415,12 +1508,16 @@ class MainWindow(QMainWindow):
 
     def _on_final_transcript(self, text: str):
         self.interview.append_transcript("YOU", text, is_interim=False)
+        # User finished speaking — AI will now respond. Keep mic LISTENING until AI speaks.
+        self.interview.mic_indicator.set_listening()
         if self._behavioral_analyzer:
             self._behavioral_analyzer.update_word_count(text)
 
     def _on_ai_text_chunk(self, chunk: str):
         self._current_ai_response += chunk
         self.interview.append_ai_text(chunk)
+        # Switch indicator to AI Speaking on first text chunk
+        self.interview.mic_indicator.set_ai_speaking()
 
     def _on_audio_chunk(self, audio_bytes: bytes):
         if self._audio_manager:
@@ -1428,8 +1525,9 @@ class MainWindow(QMainWindow):
 
     def _on_phase_changed(self, phase_name: str):
         self.interview.set_phase(phase_name)
-        # Clear AI text box for new phase
         self._current_ai_response = ""
+        # AI is generating next question — set to idle until audio starts
+        self.interview.mic_indicator.set_idle()
 
     def _on_behavioral_snapshot(self, snapshot):
         self.interview.update_behavioral(snapshot)
@@ -1491,12 +1589,10 @@ Here is the interview transcript:
 
     def _on_session_complete(self, session_data: dict):
         self._last_session_data = session_data
-        
-        # Stop analyzers and audio
         if self._behavioral_analyzer:
-            self._last_behavior_report = self._behavioral_analyzer.stop()
+            behavior_report = self._behavioral_analyzer.stop()
         else:
-            self._last_behavior_report = None
+            behavior_report = None
 
         if self._audio_manager:
             self._audio_manager.shutdown()
@@ -1509,19 +1605,14 @@ Here is the interview transcript:
         if self._current_ai_response:
             self.interview.append_transcript("AI", self._current_ai_response)
 
-        # Start background thread for LLM feedback
-        self.interview.end_btn.setText("ANALYZING TRANSCRIPT...")
-        self._feedback_worker = FeedbackWorker(session_data)
-        self._feedback_worker.finished.connect(self._finalize_report)
-        self._feedback_worker.error.connect(lambda e: self._finalize_report("")) # Fallback on error
-        self._feedback_worker.start()
+        # Generate AI feedback from conversation
+        ai_feedback = self._generate_ai_feedback(session_data)
 
-    def _finalize_report(self, ai_feedback: str):
-        """Called when the FeedbackWorker finishes."""
-        if self._last_behavior_report and self._resume_profile:
+        # Build report
+        if behavior_report and self._resume_profile:
             self.report.populate_report(
-                self._last_behavior_report,
-                self._last_session_data,
+                behavior_report,
+                session_data,
                 self._resume_profile.skill_matches,
                 ai_feedback=ai_feedback,
             )

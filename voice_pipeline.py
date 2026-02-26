@@ -23,6 +23,7 @@ from enum import Enum, auto
 from typing import Optional, AsyncGenerator, Callable
 
 import httpx
+import numpy as np
 import websockets
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ PHASE_QUESTION_BUDGETS = {
 # ─── System Prompt Builder ────────────────────────────────────────────────────
 
 def build_system_prompt(candidate_profile_summary: str, job_role: str) -> str:
-    return f"""You are a highly experienced Senior Technical Interviewer at a top-tier technology company. Your role is to conduct a structured yet adaptive viva interview.
+    return f"""You are a highly experienced Senior Technical Interviewer at a top-tier technology company. Your role is to conduct a structured yet highly adaptive viva interview.
 
 CANDIDATE PROFILE:
 {candidate_profile_summary}
@@ -69,12 +70,12 @@ TARGET ROLE: {job_role}
 
 INTERVIEW GUIDELINES:
 1. Ask ONE focused question at a time. Never ask multiple questions in the same turn.
-2. Listen carefully to the candidate's answer before proceeding.
-3. If the candidate mentions a technology or concept superficially, probe deeper with follow-ups.
-4. If they demonstrate strong knowledge, acknowledge briefly and advance. If weak, probe but don't embarrass.
-5. Maintain a professional yet warm and encouraging tone throughout.
-6. Track what the candidate has answered and don't repeat topics.
-7. Flag skill gaps identified in the profile for targeted probing.
+2. Listen carefully to the candidate's answer before proceeding. 
+3. THIS IS CRITICAL: Do NOT just read down a generic list of questions. You MUST generate your next question based specifically on what the candidate just said.
+4. If the candidate mentions a specific technology, concept, or project superficially, your very next question MUST be a follow-up probing deeper into that specific topic.
+5. If they demonstrate strong knowledge, acknowledge briefly and advance. If weak, probe but don't embarrass.
+6. Maintain a professional yet warm and encouraging tone throughout.
+7. Track what the candidate has answered and don't repeat topics.
 8. Keep each question concise — 1-3 sentences maximum.
 9. At the WRAP_UP phase, summarize 1-2 key strengths and 1-2 areas for growth.
 10. DO NOT reveal that you have read their resume unless they ask directly.
@@ -89,13 +90,13 @@ RESPONSE FORMAT:
 def build_phase_directive(phase: InterviewPhase, weak_skills: list[str]) -> str:
     directives = {
         InterviewPhase.INTRO: "Greet the candidate warmly. Ask them to introduce themselves and their background.",
-        InterviewPhase.WARM_UP: "Ask a gentle warm-up question about their most recent project or role.",
-        InterviewPhase.TECHNICAL_CORE: f"Ask a core technical question directly relevant to the {', '.join(weak_skills[:2]) if weak_skills else 'role fundamentals'}.",
-        InterviewPhase.BEHAVIORAL: "Ask a behavioral STAR-method question about teamwork, conflict, or challenge.",
-        InterviewPhase.SKILL_PROBE: f"Probe specifically on identified weak areas: {', '.join(weak_skills[:3]) if weak_skills else 'general problem-solving'}. Be adaptive based on their responses.",
+        InterviewPhase.WARM_UP: "Ask a gentle warm-up question about their most recent project or role. Ask a direct follow up based on what they just said before moving on.",
+        InterviewPhase.TECHNICAL_CORE: f"Engage in a technical discussion regarding {', '.join(weak_skills[:2]) if weak_skills else 'role fundamentals'}. Your goal is to drill down into the specific terms and answers they provide in the ongoing conversation.",
+        InterviewPhase.BEHAVIORAL: "Ask a behavioral STAR-method question about teamwork, conflict, or challenge. Pay close attention to their answer and immediately ask them to clarify a specific point they made.",
+        InterviewPhase.SKILL_PROBE: f"Probe specifically on identified weak areas: {', '.join(weak_skills[:3]) if weak_skills else 'general problem-solving'}. Be highly adaptive based on their responses.",
         InterviewPhase.WRAP_UP: "Thank the candidate. Provide 1-2 specific strengths and 1-2 growth areas. Ask if they have questions.",
     }
-    return directives.get(phase, "Continue the interview naturally.")
+    return directives.get(phase, "Continue the interview naturally, generating follow-ups based strictly on the candidate's previous statements.")
 
 
 # ─── Groq LLM Client ─────────────────────────────────────────────────────────
@@ -233,11 +234,12 @@ class DeepgramSTTClient:
         "&sample_rate=16000"
         "&channels=1"
         "&interim_results=true"
-        "&endpointing=300"       # 300ms silence = utterance end
-        "&utterance_end_ms=1000"
+        "&endpointing=150"       # 150ms silence = utterance end (was 300ms)
+        "&utterance_end_ms=1000" # Deepgram minimum; keep at 1000ms
         "&smart_format=true"
         "&punctuate=true"
         "&disfluencies=false"    # We handle disfluency detection locally
+        "&keepalive=true"
     )
 
     def __init__(self, api_key: str):
@@ -250,7 +252,7 @@ class DeepgramSTTClient:
         headers = {"Authorization": f"Token {self.api_key}"}
         self._ws = await websockets.connect(
             self.WS_URL,
-            extra_headers=headers,
+            additional_headers=headers,
             ping_interval=20,
             ping_timeout=10,
             max_size=2**20
@@ -331,6 +333,17 @@ class ElevenLabsTTSClient:
         self.dg_key = deepgram_key
         self.voice_id = voice_id or self.DEFAULT_VOICE_ID
         self._use_deepgram_fallback = False
+        # Persistent HTTP client — avoids TCP handshake latency on every sentence
+        self._http_client: Optional[httpx.AsyncClient] = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(timeout=30.0)
+        return self._http_client
+
+    async def close(self):
+        if self._http_client and not self._http_client.is_closed:
+            await self._http_client.aclose()
 
     async def synthesize_stream(self, text: str) -> AsyncGenerator[bytes, None]:
         """Yield audio chunks (MP3) as they stream from the API."""
@@ -363,15 +376,15 @@ class ElevenLabsTTSClient:
                 "style": 0.3,
                 "use_speaker_boost": True,
             },
-            "output_format": "mp3_22050_32",    # Small chunks, low latency
+            "output_format": "pcm_16000",    # Raw PCM for direct playback
         }
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            async with client.stream("POST", url, headers=headers, json=payload) as response:
-                response.raise_for_status()
-                async for chunk in response.aiter_bytes(chunk_size=4096):
-                    if chunk:
-                        yield chunk
+        client = await self._get_client()
+        async with client.stream("POST", url, headers=headers, json=payload) as response:
+            response.raise_for_status()
+            async for chunk in response.aiter_bytes(chunk_size=1024):  # 1024 = 32ms chunks
+                if chunk:
+                    yield chunk
 
     async def _deepgram_tts(self, text: str) -> AsyncGenerator[bytes, None]:
         """Deepgram Aura TTS — covered by the $200 dev credit."""
@@ -380,14 +393,14 @@ class ElevenLabsTTSClient:
             "Content-Type": "application/json",
         }
         payload = {"text": text}
-        url = f"{self.DEEPGRAM_TTS_URL}?model=aura-asteria-en"
+        url = f"{self.DEEPGRAM_TTS_URL}?model=aura-asteria-en&encoding=linear16&sample_rate=16000"
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            async with client.stream("POST", url, headers=headers, json=payload) as response:
-                response.raise_for_status()
-                async for chunk in response.aiter_bytes(chunk_size=4096):
-                    if chunk:
-                        yield chunk
+        client = await self._get_client()
+        async with client.stream("POST", url, headers=headers, json=payload) as response:
+            response.raise_for_status()
+            async for chunk in response.aiter_bytes(chunk_size=1024):
+                if chunk:
+                    yield chunk
 
 
 # ─── Interview Session State ──────────────────────────────────────────────────
@@ -429,6 +442,118 @@ class InterviewSession:
             self.current_phase = InterviewPhase.COMPLETE
 
 
+# ─── Groq Whisper STT Client (replaces Deepgram) ─────────────────────────────
+
+def _pcm_to_wav(pcm_bytes: bytes, sample_rate: int = 16000, channels: int = 1) -> bytes:
+    """Convert raw 16-bit PCM bytes into an in-memory WAV file."""
+    import io, wave
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(2)  # 16-bit
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm_bytes)
+    return buf.getvalue()
+
+
+class GroqWhisperSTTClient:
+    """
+    High-accuracy STT using Groq Whisper Large V3 Turbo.
+    Implements a local energy-based VAD to detect speech boundaries,
+    then fires off batch Whisper API calls with sub-second latency.
+    """
+    SPEECH_RMS_THRESHOLD = 180   # RMS above this = speech (tune 100-400)
+    SILENCE_CHUNKS_NEEDED = 22   # ~22 * 32ms = ~700ms of silence ends utterance
+    MIN_SPEECH_CHUNKS = 10       # ~320ms minimum to avoid spurious triggers
+
+    def __init__(self, groq_api_key: str):
+        self._api_key = groq_api_key
+        self._audio_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
+
+    def push_frame_threadsafe(self, pcm_bytes: bytes, loop: asyncio.AbstractEventLoop):
+        """Called from PyAudio OS thread — routes frame into the asyncio queue safely."""
+        try:
+            loop.call_soon_threadsafe(self._audio_queue.put_nowait, pcm_bytes)
+        except (RuntimeError, asyncio.QueueFull):
+            pass
+
+    async def run(
+        self,
+        on_interim,
+        on_final,
+        stop_event: asyncio.Event,
+    ):
+        """Main VAD + transcription coroutine. Run as a task inside the orchestrator."""
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=self._api_key)
+
+        speech_buffer = bytearray()
+        silence_chunks = 0
+        speech_chunks = 0
+        is_speaking = False
+
+        while not stop_event.is_set():
+            try:
+                frame = await asyncio.wait_for(self._audio_queue.get(), timeout=0.05)
+            except asyncio.TimeoutError:
+                # If speaking and a long timeout occurs, treat as end of utterance
+                if is_speaking and silence_chunks >= self.SILENCE_CHUNKS_NEEDED:
+                    await self._transcribe_and_fire(
+                        client, bytes(speech_buffer), on_final
+                    )
+                    speech_buffer.clear()
+                    speech_chunks = 0
+                    silence_chunks = 0
+                    is_speaking = False
+                continue
+
+            # Energy-based Voice Activity Detection
+            samples = np.frombuffer(frame, dtype=np.int16)
+            rms = float(np.sqrt(np.mean(samples.astype(np.float32) ** 2)))
+
+            if rms >= self.SPEECH_RMS_THRESHOLD:
+                # Active speech
+                if not is_speaking:
+                    is_speaking = True
+                    on_interim("Speaking...")
+                silence_chunks = 0
+                speech_chunks += 1
+                speech_buffer.extend(frame)
+            else:
+                # Silence
+                if is_speaking:
+                    silence_chunks += 1
+                    speech_buffer.extend(frame)  # include trailing silence
+
+                    if silence_chunks >= self.SILENCE_CHUNKS_NEEDED:
+                        # End of utterance — transcribe if enough speech was captured
+                        if speech_chunks >= self.MIN_SPEECH_CHUNKS:
+                            await self._transcribe_and_fire(
+                                client, bytes(speech_buffer), on_final
+                            )
+                        speech_buffer.clear()
+                        speech_chunks = 0
+                        silence_chunks = 0
+                        is_speaking = False
+
+    async def _transcribe_and_fire(self, client, pcm_bytes: bytes, on_final):
+        """Send buffered audio to Groq Whisper API and fire on_final callback."""
+        try:
+            wav_bytes = _pcm_to_wav(pcm_bytes)
+            result = await client.audio.transcriptions.create(
+                file=("audio.wav", wav_bytes),
+                model="whisper-large-v3-turbo",
+                language="en",
+                response_format="text",
+            )
+            text = str(result).strip() if result else ""
+            if text:
+                logger.info(f"Whisper transcript: {text!r}")
+                on_final(text)
+        except Exception as e:
+            logger.error(f"Groq Whisper error: {e}")
+
+
 # ─── Main Orchestrator ────────────────────────────────────────────────────────
 
 class VoicePipelineOrchestrator:
@@ -454,7 +579,8 @@ class VoicePipelineOrchestrator:
         self.session = session
         self.cbs = callbacks
 
-        self.stt = DeepgramSTTClient(os.environ.get("DEEPGRAM_API_KEY", ""))
+        # Use Groq Whisper for STT (higher accuracy, faster than Deepgram nova)
+        self.stt = GroqWhisperSTTClient(os.environ.get("GROQ_API_KEY", ""))
         self.llm = GroqLLMClient()
         self.tts = ElevenLabsTTSClient(
             os.environ.get("ELEVENLABS_API_KEY", ""),
@@ -463,60 +589,57 @@ class VoicePipelineOrchestrator:
 
         self._stop_event = asyncio.Event()
         self._audio_input_queue: asyncio.Queue = asyncio.Queue(maxsize=500)
+        self._tts_text_queue: asyncio.Queue = asyncio.Queue()
         self._processing_lock = asyncio.Lock()
         self._is_ai_speaking = False
         self._full_ai_response = ""
+        self._bytes_sent_to_audio = 0
+        self._audio_start_time = 0.0
 
     # ── Public API ────────────────────────────────────────────────────────────
 
     async def start(self):
         """Connect to all APIs and begin the interview."""
-        await self.stt.connect()
+        # No WebSocket to connect for Groq Whisper — it's REST-based
         await asyncio.gather(
-            self._stt_receive_loop(),
-            self._audio_send_loop(),
+            self.stt.run(
+                on_interim=self._on_interim_transcript,
+                on_final=self._on_final_transcript,
+                stop_event=self._stop_event,
+            ),
+            self._tts_worker_loop(),
             self._kick_off_intro(),
         )
 
-    def push_audio_frame(self, pcm_bytes: bytes):
-        """Called by PyAudio callback to enqueue raw audio."""
-        if not self._is_ai_speaking:  # Don't process our own TTS output
-            try:
-                self._audio_input_queue.put_nowait(pcm_bytes)
-            except asyncio.QueueFull:
-                pass  # Drop frame to prevent backpressure
+    def push_audio_frame(self, pcm_bytes: bytes, loop: asyncio.AbstractEventLoop = None):
+        """Called by push_audio from the PyAudio OS thread.
+        Routes audio to the Groq Whisper VAD queue (thread-safe via call_soon_threadsafe)."""
+        if not self._is_ai_speaking and loop:
+            self.stt.push_frame_threadsafe(pcm_bytes, loop)
 
     def stop(self):
         self._stop_event.set()
 
     # ── Internal Loops ────────────────────────────────────────────────────────
-
-    async def _kick_off_intro(self):
-        """Fire the first question to start the interview."""
-        await asyncio.sleep(1.0)  # Let STT connection stabilize
-        await self._get_and_speak_ai_response()
-
-    async def _audio_send_loop(self):
-        """Forward buffered audio frames to Deepgram WebSocket."""
+    
+    async def _tts_worker_loop(self):
+        """Asynchronously fetch TTS audio sequentially so LLM is not blocked."""
         while not self._stop_event.is_set():
             try:
-                frame = await asyncio.wait_for(
-                    self._audio_input_queue.get(), timeout=0.1
-                )
-                await self.stt.send_audio(frame)
+                item = await asyncio.wait_for(self._tts_text_queue.get(), timeout=0.1)
+                tts_text, pending_ui_text = item
+                await self._stream_tts(tts_text, pending_ui_text)
+                self._tts_text_queue.task_done()
             except asyncio.TimeoutError:
                 continue
             except Exception as e:
-                logger.error(f"Audio send error: {e}")
+                logger.error(f"TTS worker error: {e}")
+                self._tts_text_queue.task_done()
 
-    async def _stt_receive_loop(self):
-        """Receive transcripts from Deepgram and trigger LLM on final results."""
-        await self.stt.receive_transcripts(
-            on_interim=self._on_interim_transcript,
-            on_final=self._on_final_transcript,
-            stop_event=self._stop_event,
-        )
-
+    async def _kick_off_intro(self):
+        """Fire the first question to start the interview."""
+        await asyncio.sleep(0.5)  # Brief startup pause
+        await self._get_and_speak_ai_response()
     def _on_interim_transcript(self, text: str):
         """Callback for live partial transcripts — update UI immediately."""
         self.cbs.get("on_interim_transcript", lambda x: None)(text)
@@ -560,8 +683,12 @@ class VoicePipelineOrchestrator:
 
         self._is_ai_speaking = True
         self._full_ai_response = ""
-        collected_text = ""
+        self._bytes_sent_to_audio = 0
+        self._audio_start_time = time.time()
+        
         tts_sentence_buffer = ""
+        # Buffer of text not yet sent to the UI (will emit when audio arrives)
+        pending_ui_text = ""
 
         # Stream LLM tokens
         async for token in self.llm.stream_response(
@@ -570,29 +697,61 @@ class VoicePipelineOrchestrator:
             phase_directive,
         ):
             self._full_ai_response += token
-            collected_text += token
             tts_sentence_buffer += token
-            self.cbs.get("on_ai_text_chunk", lambda x: None)(token)
+            pending_ui_text += token
+            # Don't emit text immediately — we'll flush it when audio arrives
 
-            # Send complete sentences to TTS for minimal latency
-            # TTS can start while LLM is still generating the rest
+            # Send complete sentences to TTS for minimal latency and natural pacing
             if any(tts_sentence_buffer.endswith(p) for p in [".", "!", "?", ":", "\n"]):
                 sentence = tts_sentence_buffer.strip()
                 if sentence:
-                    await self._stream_tts(sentence)
+                    # Pass the pending UI text along so it emits right when audio starts
+                    self._tts_text_queue.put_nowait((sentence + " ", pending_ui_text))
+                    pending_ui_text = ""
                 tts_sentence_buffer = ""
 
         # Flush remaining text
         if tts_sentence_buffer.strip():
-            await self._stream_tts(tts_sentence_buffer.strip())
+            self._tts_text_queue.put_nowait((tts_sentence_buffer.strip() + " ", pending_ui_text))
+            pending_ui_text = ""
+
+        # Wait until all queued sentences are fully fetched from API (with timeout)
+        try:
+            await asyncio.wait_for(self._tts_text_queue.join(), timeout=30.0)
+        except asyncio.TimeoutError:
+            # Drain any unfinished TTS tasks so join() doesn't block later
+            while not self._tts_text_queue.empty():
+                try:
+                    self._tts_text_queue.get_nowait()
+                    self._tts_text_queue.task_done()
+                except asyncio.QueueEmpty:
+                    break
+        
+        # Audio bytes are queued in audio_manager continuously and play at 32000 bytes/sec
+        if self._bytes_sent_to_audio > 0:
+            elapsed_time = time.time() - self._audio_start_time
+            sleep_time = (self._bytes_sent_to_audio / 32000.0) - elapsed_time
+            # Add 0.6s physical acoustic tail clearing delay
+            if sleep_time > 0:
+                await asyncio.sleep(sleep_time + 0.6)
 
         self.session.add_ai_message(self._full_ai_response)
         self._is_ai_speaking = False
 
-    async def _stream_tts(self, text: str):
-        """Stream TTS audio chunks to the UI callback."""
+    async def _stream_tts(self, text: str, pending_ui_text: str = ""):
+        """Stream TTS audio chunks to the UI callback.
+        Emits pending UI text only when the first audio chunk arrives (sync voice+text).
+        """
         try:
+            first_chunk = True
             async for chunk in self.tts.synthesize_stream(text):
+                if first_chunk:
+                    # Only now reveal the text in the UI (voice and text are in sync)
+                    if pending_ui_text:
+                        self.cbs.get("on_ai_text_chunk", lambda x: None)(pending_ui_text)
+                    first_chunk = False
+                    self._audio_start_time = time.time()
+                self._bytes_sent_to_audio += len(chunk)
                 self.cbs.get("on_audio_chunk", lambda x: None)(chunk)
         except Exception as e:
             logger.error(f"TTS error: {e}")
@@ -601,7 +760,21 @@ class VoicePipelineOrchestrator:
     async def _finalize_session(self):
         """Build the final session report and signal completion."""
         self._stop_event.set()
-        await self.stt.close()
+        self._is_ai_speaking = False
+
+        # Drain TTS queue so nothing blocks
+        while not self._tts_text_queue.empty():
+            try:
+                self._tts_text_queue.get_nowait()
+                self._tts_text_queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
+        # Close the persistent HTTP client on the TTS side
+        try:
+            await self.tts.close()
+        except Exception:
+            pass
 
         report_data = {
             "candidate_name": self.session.candidate_name,
@@ -669,12 +842,68 @@ try:
 
         def push_audio(self, pcm_bytes: bytes):
             if self._orchestrator and self._loop and self._loop.is_running():
-                self._orchestrator.push_audio_frame(pcm_bytes)
+                # CRITICAL: call_soon_threadsafe properly bridges the PyAudio OS thread
+                # into the asyncio event loop. Without this, asyncio.Queue.put_nowait()
+                # is called across thread boundaries causing lag/drops.
+                self._orchestrator.push_audio_frame(pcm_bytes, self._loop)
 
         def stop(self):
             if self._orchestrator:
                 if self._loop and self._loop.is_running():
                     self._loop.call_soon_threadsafe(self._orchestrator.stop)
+                    
+        def end_session(self):
+            """Trigger early finalization — guarantees session_complete fires.
+            Uses non-blocking polling to avoid freezing the Qt main thread."""
+            if not self._orchestrator:
+                return
+
+            if self._loop and self._loop.is_running():
+                try:
+                    self._end_future = asyncio.run_coroutine_threadsafe(
+                        self._orchestrator._finalize_session(),
+                        self._loop
+                    )
+                    # Poll for completion without blocking the Qt event loop
+                    from PyQt6.QtCore import QTimer
+                    self._end_poll_count = 0
+                    self._end_timer = QTimer()
+                    def _check_done():
+                        self._end_poll_count += 1
+                        if self._end_future.done():
+                            self._end_timer.stop()
+                            # session_complete was already emitted by _finalize_session callback
+                            return
+                        if self._end_poll_count > 50:  # 50 * 200ms = 10s timeout
+                            self._end_timer.stop()
+                            logger.warning("Async finalization timed out, using fallback")
+                            self._emit_fallback_report()
+                    self._end_timer.timeout.connect(_check_done)
+                    self._end_timer.start(200)
+                    return
+                except Exception as e:
+                    logger.warning(f"Async finalization failed ({e}), using fallback")
+
+            # Fallback: build report directly from session state
+            self._emit_fallback_report()
+
+        def _emit_fallback_report(self):
+            """Build and emit a report directly when the async path fails."""
+            self._orchestrator._stop_event.set()
+            session = self._orchestrator.session
+            report_data = {
+                "candidate_name": session.candidate_name,
+                "job_role": session.job_role,
+                "total_questions": session.total_questions,
+                "duration_seconds": int(time.time() - session.start_time),
+                "conversation_history": session.conversation_history,
+                "avg_response_time": (
+                    sum(session.response_times) / len(session.response_times)
+                    if session.response_times else 0
+                ),
+                "phase_progression": [p.name for p in PHASE_SEQUENCE],
+            }
+            self.session_complete.emit(report_data)
 
 except ImportError:
     logger.warning("PyQt6 not available — SessionWorker not defined")
